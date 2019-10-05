@@ -6,6 +6,7 @@ import RPi.GPIO as GPIO
 import paho.mqtt.client as mqtt
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
+import argparse
 
 logging.basicConfig(level=logging.INFO)
 
@@ -13,7 +14,11 @@ logging.basicConfig(level=logging.INFO)
 
 class Feeder():
 
-  def __init__(self):
+  def __init__(self,server,username,password):
+    self.server=server
+    self.username=username
+    self.password=password
+
     mode=GPIO.getmode()
 
     GPIO.cleanup()
@@ -32,18 +37,19 @@ class Feeder():
     self.max_daily_feeds=10
 
   def mqtt_connect(self):
-    #todo: read config externally
-    USERNAME="feeder"
-    PASSWORD="password"
-    HOST="mqtt.example.com"
-    PORT=8883
     self.mqtt_client = mqtt.Client()
     self.mqtt_client.tls_set(ca_certs="/etc/ssl/certs/ca-certificates.crt")
-    self.mqtt_client.username_pw_set(USERNAME, password=PASSWORD)
+    self.mqtt_client.username_pw_set(self.username, password=self.password)
     self.mqtt_client.on_connect = self.callback_on_connect
     self.mqtt_client.on_disconnect = self.callback_on_disconnect
     self.mqtt_client.on_message = self.callback_on_message
-    self.mqtt_client.connect(HOST, PORT, 60)
+    if ":" in self.server:
+      host=self.server[:self.server.find(":")]
+      port=int(self.server[self.server.find(":")+1:])
+    else:
+      host=server
+      port=8883  
+    self.mqtt_client.connect(host,port,60)
     self.mqtt_client.loop_start()
     self.mqtt_update()
 
@@ -132,21 +138,38 @@ class Feeder():
     GPIO.cleanup()
     #todo: save feedings to disk
 
-my_feeder = Feeder()
-my_feeder.mqtt_connect()
+def main(args):
+  print("Startting feeder with args:")
+  print("Server: "+args.server)
+  print("Username: "+args.username)
+  print("Password: "+args.password)
+  my_feeder = Feeder(\
+    server=args.server,
+    username=args.username,\
+    password=args.password\
+    )
+  my_feeder.mqtt_connect()
 
-sched = BackgroundScheduler()
-@sched.scheduled_job('cron', hour='*/2')
-def scheduled_job():
-  logging.info("RUNNING SCHEDULED JOB - - - - -")
-  my_feeder.feed_if_appropriate()
-sched.start()
+  sched = BackgroundScheduler()
+  @sched.scheduled_job('cron', hour='*/2')
+  def scheduled_job():
+    logging.info("RUNNING SCHEDULED JOB - - - - -")
+    my_feeder.feed_if_appropriate()
+  sched.start()
 
 
-while True:
-  my_feeder.send_refresh()
-  time.sleep(1800)
+  while True:
+    my_feeder.send_refresh()
+    time.sleep(1800)
 
-# todo; catch sigterm in while True loop above ^
-my_feeder.shutdown()
+  # todo; catch sigterm in while True loop above ^
+  my_feeder.shutdown()
+  exit(0)
 
+if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='~~~~~')
+  parser.add_argument('-s','--server', help='MQTT server (eg mqtt.aol.com:8883',required=True)
+  parser.add_argument('-u','--username',help='MQTT username', required=True)
+  parser.add_argument('-p','--password',help='MQTT password', required=True)
+  args = parser.parse_args()
+  main(args)
