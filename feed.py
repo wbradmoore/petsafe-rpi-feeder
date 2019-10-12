@@ -1,3 +1,5 @@
+"""Summary
+"""
 #/usr/bin/python3
 import sys
 import time
@@ -14,7 +16,28 @@ logging.basicConfig(level=logging.INFO)
 
 class Feeder():
 
+  """Summary
+  
+  Attributes:
+      backward (int): GPIO pin to move motor backward
+      forward (int): GPIO pin to move motor forward
+      ticker (int): GPIO pin of input from motor (cycles on off as motor spins)
+      feed_timestamps (list): list of timestamps of recent feedings 
+      max_daily_feeds (int): number of times feeds should occur daily
+      mqtt_client (paho.mqtt.client: MQTT client for communicating with Home Assistant
+      server (str): url[:port] of MQTT server
+      username (str): MQTT username
+      password (str): MQTT password
+  """
+  
   def __init__(self,server,username,password):
+    """Summary
+    
+    Args:
+        server (str): url[:port] of MQTT server
+        username (str): MQTT username
+        password (str): MQTT password
+    """
     self.server=server
     self.username=username
     self.password=password
@@ -37,6 +60,8 @@ class Feeder():
     self.max_daily_feeds=10
 
   def mqtt_connect(self):
+    """Connect to MQTT client, set callbacks, announce self
+    """
     self.mqtt_client = mqtt.Client()
     self.mqtt_client.tls_set(ca_certs="/etc/ssl/certs/ca-certificates.crt")
     self.mqtt_client.username_pw_set(self.username, password=self.password)
@@ -53,7 +78,12 @@ class Feeder():
     self.mqtt_client.loop_start()
     self.mqtt_update()
 
-  def feed(self,x):
+  def feed(self,x=1):
+    """Summary
+    
+    Args:
+        x (TYPE): Number of times to feed
+    """
     logging.info("FEEDING: "+str(x))
     for i in range(x):
       GPIO.output(self.forward, GPIO.HIGH)
@@ -66,6 +96,12 @@ class Feeder():
     self.mqtt_update(new_feed=True)
 
   def wait_for_pattern(self,pattern_str, gpio_pin):
+    """Summary
+    
+    Args:
+        pattern_str (str): The pattern to wait to see on the input pin. (The input pin should be switching between 0 and 1 as the motor spins)
+        gpio_pin (int): the input pin
+    """
     for index in range(len(pattern_str)):
       logging.debug("Waiting for: "+"-"*index+pattern_str[index:])
       status_int = int(pattern_str[index])
@@ -74,6 +110,11 @@ class Feeder():
     logging.info("Motor successfully turned, pattern: "+pattern_str)
 
   def mqtt_update(self,new_feed=False):
+    """Summary
+    
+    Args:
+        new_feed (bool, optional): Whether this update is being sent as a result of a brand new feed that just occured
+    """
     self.feed_timestamps = [t for t in self.feed_timestamps if time.time() - t < 24*60*60]
     logging.info(str(len(self.feed_timestamps))+" feeds in the last 24 hours.")
     lastfeed = len(self.feed_timestamps) and int(max(self.feed_timestamps)) or None
@@ -86,6 +127,11 @@ class Feeder():
     self.mqtt_client.publish("custom/feeder",payload=payload,qos=0,retain=True)
 
   def mqtt_update_availability(self,availability="on"):
+    """Summary
+    
+    Args:
+        availability (str, optional): Whether feeder is available ("on" or "off")
+    """
     logging.info("Announcing availability ("+availability+")")
     payload = json.dumps({
       "availability":availability
@@ -93,6 +139,11 @@ class Feeder():
     self.mqtt_client.publish("custom/feeder/availability",payload=payload,qos=0,retain=True)
 
   def mqtt_update_state(self,state="on"):
+    """Summary
+    
+    Args:
+        state (str, optional): State for emulated switch in Home Assistant
+    """
     logging.info("Announcing state ("+state+")")
     payload = json.dumps({
       "state":state
@@ -100,18 +151,29 @@ class Feeder():
     self.mqtt_client.publish("custom/feeder/state",payload=payload,qos=0,retain=True)
 
   def send_refresh(self):
+    """Re-sends all pertinent info to MQTT server
+    """
     self.mqtt_update_availability()
     self.mqtt_update_state()
 
   def callback_on_connect(self,mqtt_client, userdata, flags, rc):
+    """Connect Callback
+    """
     logging.info("Connected with result code "+str(rc))
     mqtt_client.subscribe("custom/feeder/request")
 
   def callback_on_disconnect(self,mqtt_client, userdata,rc=0):
+    """Disconnect Callback
+    """
     logging.warn("DisConnected result code "+str(rc))
     mqtt_client.loop_stop()
 
   def callback_on_message(self,mqtt_client, userdata, msg):
+    """Message Callback. Handles requests for updates, and manual feed requests
+    
+    Args:
+        msg (utf8 payload): request received via MQTT
+    """
     logging.info("Message Received: "+msg.topic+" "+str(msg.payload))
     try:
       payload_str = msg.payload.decode("utf-8")
@@ -126,12 +188,16 @@ class Feeder():
       self.mqtt_update()
 
   def feed_if_appropriate(self):
+    """Handles scheduled feeds. Every time the scheduler calls this, a feed is initiated if the number of feeds in the last 24 hours is not more than the max daily feeds
+    """
     if len(self.feed_timestamps) <= self.max_daily_feeds:
       self.feed(1)
     else:
       self.mqtt_update()
 
   def shutdown(self):
+    """Shutdown cleanly / announce unavailability
+    """
     my_feeder.mqtt_update()
     my_feeder.mqtt_update_availability("off")
     my_feeder.mqtt_update_state("off")
@@ -139,6 +205,8 @@ class Feeder():
     #todo: save feedings to disk
 
 def main(args):
+  """Init feeder, init scheduler, then send an update every 30 minutes forever
+  """
   print("Startting feeder with args:")
   print("Server: "+args.server)
   print("Username: "+args.username)
@@ -153,6 +221,8 @@ def main(args):
   sched = BackgroundScheduler()
   @sched.scheduled_job('cron', hour='*/2')
   def scheduled_job():
+    """Summary
+    """
     logging.info("RUNNING SCHEDULED JOB - - - - -")
     my_feeder.feed_if_appropriate()
   sched.start()
