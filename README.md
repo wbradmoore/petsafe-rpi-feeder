@@ -1,6 +1,6 @@
 # petsafe-rpi-feeder
 
-Allows a PetSafe automatic feeder to be controlled via MQTT.
+Controls "PetSafe Simply Feed" motor via RPi GPIO, communicates with Home Assistant via MQTT, implementing a switch and sensor. Turning the switch "on" initiates a manual feed. Currently turning the switch "off" is not supported... and wont be supported until I can decide on some mechanisms to prevent starving animals in the case of an accidental deactivation of the feeder.
 
 Installation instructions:
 

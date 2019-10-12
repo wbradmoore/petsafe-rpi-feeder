@@ -1,6 +1,5 @@
-"""Summary
-"""
 #/usr/bin/python3
+
 import sys
 import time
 import json
@@ -16,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 class Feeder():
 
-  """Summary
+  """Controls "PetSafe Simply Feed" motor via RPi GPIO, communicates with Home Assistant via MQTT, implementing a switch and sensor. Turning the switch "on" initiates a manual feed.
   
   Attributes:
       backward (int): GPIO pin to move motor backward
