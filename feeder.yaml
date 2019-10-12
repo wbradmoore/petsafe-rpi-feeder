@@ -1,0 +1,31 @@
+switch:
+  - platform: mqtt
+    name: "Feeder"
+    availability_topic: "custom/feeder/availability"
+    payload_available: '{"availability": "on"}'
+    payload_not_available: '{"availability": "off"}'
+    state_topic: "custom/feeder/state"
+    state_on: '{"state": "on"}'
+    state_off: '{"state": "off"}'
+    command_topic: "custom/feeder/request"
+    payload_on: '{"type": "feed_request"}'
+    payload_off: '{"type": "update_request"}'
+    optimistic: true
+    qos: 1
+    retain: false
+
+sensor:
+  - platform: mqtt
+    name: "Feeder"
+    availability_topic: "custom/feeder/availability"
+    payload_available: '{"availability": "on"}'
+    payload_not_available: '{"availability": "off"}'
+    state_topic: "custom/feeder"
+    value_template: "{{ value_json.last_feed }}"
+    json_attributes_topic: "custom/feeder"
+  - platform: template
+    sensors:
+      hours_since_last_feed:
+        friendly_name: Hours Since Last Feed
+        value_template: '{{ ((as_timestamp(now()) - states.sensor.feeder.attributes.last_feed) / 3600) | round(1) }}'
+        unit_of_measurement: "h"
