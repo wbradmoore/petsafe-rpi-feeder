@@ -56,7 +56,7 @@ class Feeder():
     GPIO.setup(self.ticker, GPIO.IN)
 
     self.feed_timestamps=[]
-    self.max_daily_feeds=10
+    self.max_daily_feeds=13
 
   def mqtt_connect(self):
     """Connect to MQTT client, set callbacks, announce self
@@ -206,7 +206,7 @@ class Feeder():
 def main(args):
   """Init feeder, init scheduler, then send an update every 30 minutes forever
   """
-  print("Startting feeder with args:")
+  print("Starting feeder with args:")
   print("Server: "+args.server)
   print("Username: "+args.username)
   print("Password: "+args.password)
@@ -237,7 +237,7 @@ def main(args):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='~~~~~')
-  parser.add_argument('-s','--server', help='MQTT server (eg mqtt.aol.com:8883',required=True)
+  parser.add_argument('-s','--server', help='MQTT server (eg mqtt.aol.com:8883)',required=True)
   parser.add_argument('-u','--username',help='MQTT username', required=True)
   parser.add_argument('-p','--password',help='MQTT password', required=True)
   args = parser.parse_args()
