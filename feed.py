@@ -71,7 +71,7 @@ class Feeder():
       host=self.server[:self.server.find(":")]
       port=int(self.server[self.server.find(":")+1:])
     else:
-      host=server
+      host=self.server
       port=8883  
     self.mqtt_client.connect(host,port,60)
     self.mqtt_client.loop_start()
