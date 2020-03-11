@@ -8,6 +8,7 @@ import paho.mqtt.client as mqtt
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 import argparse
+import pickle, os
 
 logging.basicConfig(level=logging.INFO)
 
@@ -40,6 +41,8 @@ class Feeder():
     self.server=server
     self.username=username
     self.password=password
+    self.switch_state="ON"
+    self.button_state="ON"
 
     mode=GPIO.getmode()
 
@@ -55,8 +58,12 @@ class Feeder():
     GPIO.setup(self.backward, GPIO.OUT)
     GPIO.setup(self.ticker, GPIO.IN)
 
-    self.feed_timestamps=[]
-    self.max_daily_feeds=13
+    if os.path.exists("feed_timestamps.pickle"):
+      self.feed_timestamps = pickle.load( open("feed_timestamps.pickle", "rb") )
+      logging.debug("Using existing pickle with timestamps: "+str(self.feed_timestamps))
+    else:
+      self.feed_timestamps=[]
+    self.max_daily_feeds=12
 
   def mqtt_connect(self):
     """Connect to MQTT client, set callbacks, announce self
@@ -75,7 +82,6 @@ class Feeder():
       port=8883  
     self.mqtt_client.connect(host,port,60)
     self.mqtt_client.loop_start()
-    self.mqtt_update()
 
   def feed(self,x=1):
     """Summary
@@ -90,9 +96,12 @@ class Feeder():
       self.wait_for_pattern("10101",self.ticker)
       GPIO.output(self.forward, GPIO.LOW)
       logging.debug("Done moving forward")
-      time.sleep(.1)
+      #now bookkeeping:
+      self.button_state={"ON":"OFF","OFF":"ON"}[self.button_state]
       self.feed_timestamps = self.feed_timestamps + [time.time()]
-    self.mqtt_update(new_feed=True)
+      pickle.dump(self.feed_timestamps, open("feed_timestamps.pickle","wb") )
+      self.send_mqtt_update()
+      time.sleep(.1)
 
   def wait_for_pattern(self,pattern_str, gpio_pin):
     """Summary
@@ -108,58 +117,64 @@ class Feeder():
         time.sleep(.1)
     logging.info("Motor successfully turned, pattern: "+pattern_str)
 
-  def mqtt_update(self,new_feed=False):
-    """Summary
-    
-    Args:
-        new_feed (bool, optional): Whether this update is being sent as a result of a brand new feed that just occured
+  def num_recent_feeds(self,hours=24):
     """
-    self.feed_timestamps = [t for t in self.feed_timestamps if time.time() - t < 24*60*60]
-    logging.info(str(len(self.feed_timestamps))+" feeds in the last 24 hours.")
-    lastfeed = len(self.feed_timestamps) and int(max(self.feed_timestamps)) or None
-    payload = json.dumps({
-      "type":["update","new_feed"][new_feed],
-      "last_feed":lastfeed,
-      "next_feed":None,
-      "24hr_self.feed_timestamps":self.feed_timestamps
-      })
-    self.mqtt_client.publish("custom/feeder",payload=payload,qos=0,retain=True)
+    Returns number of feeds in last hours hours
+    """
+    num_feeds = len([t for t in self.feed_timestamps if time.time() - t < hours*60*60])
+    logging.info(str(num_feeds)+" feeds in the last "+str(hours)+" hours.")
+    return num_feeds
 
-  def mqtt_update_availability(self,availability="on"):
+  def mqtt_discovery_broadcast(self,available=True):
     """Summary
     
     Args:
         availability (str, optional): Whether feeder is available ("on" or "off")
     """
-    logging.info("Announcing availability ("+availability+")")
-    payload = json.dumps({
-      "availability":availability
-      })
-    self.mqtt_client.publish("custom/feeder/availability",payload=payload,qos=0,retain=True)
+    logging.info("Announcing for discovery ("+str(available)+")")
+    if available:
+      payload = json.dumps({
+        "name": "feeder",
+        "command_topic": "homeassistant/switch/feeder/set",
+        "state_topic": "homeassistant/switch/feeder/state"
+        })
+      self.mqtt_client.publish("homeassistant/switch/feeder/config",payload=payload,qos=0,retain=True)
+      payload = json.dumps({
+        "name": "feeder_button",
+        "command_topic": "homeassistant/switch/feeder_button/set",
+        "state_topic": "homeassistant/switch/feeder_button/state"
+        })
+      self.mqtt_client.publish("homeassistant/switch/feeder_button/config",payload=payload,qos=0,retain=True)
+    else:
+      self.mqtt_client.publish("homeassistant/switch/feeder/config",payload=payload,qos=0,retain=True)
+      self.mqtt_client.publish("homeassistant/switch/feeder_button/config",payload=payload,qos=0,retain=True)
 
-  def mqtt_update_state(self,state="on"):
+  def send_mqtt_update(self):
     """Summary
     
     Args:
-        state (str, optional): State for emulated switch in Home Assistant
     """
-    logging.info("Announcing state ("+state+")")
-    payload = json.dumps({
-      "state":state
-      })
-    self.mqtt_client.publish("custom/feeder/state",payload=payload,qos=0,retain=True)
+    self.feed_timestamps = [t for t in self.feed_timestamps if time.time() - t < 240*60*60]
+    pickle.dump(self.feed_timestamps, open("feed_timestamps.pickle","wb") )
+    lastfeed = len(self.feed_timestamps) and int(max(self.feed_timestamps)) or None
+
+    self.mqtt_client.publish("homeassistant/switch/feeder/state",payload=self.switch_state,qos=0,retain=True)
+    self.mqtt_client.publish("homeassistant/switch/feeder_button/state",payload=self.button_state,qos=0,retain=True)
 
   def send_refresh(self):
     """Re-sends all pertinent info to MQTT server
     """
-    self.mqtt_update_availability()
-    self.mqtt_update_state()
+    self.mqtt_discovery_broadcast()
+    if self.num_recent_feeds(24) <= 2:
+      self.turn_on()
+    self.send_mqtt_update()
 
   def callback_on_connect(self,mqtt_client, userdata, flags, rc):
     """Connect Callback
     """
     logging.info("Connected with result code "+str(rc))
-    mqtt_client.subscribe("custom/feeder/request")
+    mqtt_client.subscribe("homeassistant/switch/feeder/set")
+    mqtt_client.subscribe("homeassistant/switch/feeder_button/set")
 
   def callback_on_disconnect(self,mqtt_client, userdata,rc=0):
     """Disconnect Callback
@@ -174,32 +189,50 @@ class Feeder():
         msg (utf8 payload): request received via MQTT
     """
     logging.info("Message Received: "+msg.topic+" "+str(msg.payload))
-    try:
-      payload_str = msg.payload.decode("utf-8")
-      payload = json.loads(payload_str)
-    except Exception as e:
-      logging.error("Parsing payload as JSON failed: "+payload_str)
-      logging.error(e)
-      return
-    if payload["type"] == "feed_request":
-      self.feed(1)
-    if payload["type"] == "update_request":
-      self.mqtt_update()
+    if msg.topic == "homeassistant/switch/feeder/set":
+      try:
+        payload_str = msg.payload.decode("utf-8")
+      except Exception as e:
+        logging.error("Parsing switch payload failed: "+payload_str)
+        logging.error(e)
+      if payload_str == "ON":
+        self.turn_on()
+      elif payload_str == "OFF":
+        self.turn_off()
+    elif msg.topic == "homeassistant/switch/feeder_button/set":
+      try:
+        payload_str = msg.payload.decode("utf-8")
+      except Exception as e:
+        logging.error("Parsing button payload failed: "+payload_str)
+        logging.error(e)
+      if payload_str in ["ON","OFF"]:
+        self.feed(1)
+
+  def turn_on(self):
+    self.switch_state = 'ON'
+    self.send_mqtt_update()
+
+  def turn_off(self):
+    self.switch_state = 'OFF'
+    self.send_mqtt_update()
 
   def feed_if_appropriate(self):
     """Handles scheduled feeds. Every time the scheduler calls this, a feed is initiated if the number of feeds in the last 24 hours is not more than the max daily feeds
     """
-    if len(self.feed_timestamps) <= self.max_daily_feeds:
-      self.feed(1)
-    else:
-      self.mqtt_update()
+    if self.switch_state == 'ON':
+      if self.num_recent_feeds(24) <= self.max_daily_feeds:
+        self.feed(1)
+        return
+    elif self.num_recent_feeds(48) <= self.max_daily_feeds:
+        self.feed(1)
+        return
 
   def shutdown(self):
     """Shutdown cleanly / announce unavailability
     """
-    my_feeder.mqtt_update()
-    my_feeder.mqtt_update_availability("off")
-    my_feeder.mqtt_update_state("off")
+    self.send_mqtt_update("off")
+    time.sleep(.5)
+    self.mqtt_discovery_broadcast(available=False)
     GPIO.cleanup()
     #todo: save feedings to disk
 
@@ -218,7 +251,7 @@ def main(args):
   my_feeder.mqtt_connect()
 
   sched = BackgroundScheduler()
-  @sched.scheduled_job('cron', hour='*/2')
+  @sched.scheduled_job('cron', hour='*')
   def scheduled_job():
     """Summary
     """
