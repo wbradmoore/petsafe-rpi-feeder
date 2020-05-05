@@ -63,7 +63,7 @@ class Feeder():
       logging.debug("Using existing pickle with timestamps: "+str(self.feed_timestamps))
     else:
       self.feed_timestamps=[]
-    self.max_daily_feeds=12
+    self.max_daily_feeds=9
 
   def mqtt_connect(self):
     """Connect to MQTT client, set callbacks, announce self
@@ -145,9 +145,27 @@ class Feeder():
         "state_topic": "homeassistant/switch/feeder_button/state"
         })
       self.mqtt_client.publish("homeassistant/switch/feeder_button/config",payload=payload,qos=0,retain=True)
+      payload = json.dumps({
+        "name": "feeder_24hr_feeds",
+        # "device_class": None,
+        "state_topic": "homeassistant/sensor/feeder_24hr_feeds/state",
+        "unit_of_measurement": " feeds",
+        "force_update": True
+        })
+      self.mqtt_client.publish("homeassistant/sensor/feeder_24hr_feeds/config",payload=payload,qos=0,retain=True)
+      payload = json.dumps({
+        "name": "feeder_168hr_feeds",
+        # "device_class": None,
+        "state_topic": "homeassistant/sensor/feeder_168hr_feeds/state",
+        "unit_of_measurement": " feeds",
+        "force_update": True
+        })
+      self.mqtt_client.publish("homeassistant/sensor/feeder_168hr_feeds/config",payload=payload,qos=0,retain=True)
     else:
-      self.mqtt_client.publish("homeassistant/switch/feeder/config",payload=payload,qos=0,retain=True)
-      self.mqtt_client.publish("homeassistant/switch/feeder_button/config",payload=payload,qos=0,retain=True)
+      self.mqtt_client.publish("homeassistant/switch/feeder/config",payload=None,qos=0,retain=True)
+      self.mqtt_client.publish("homeassistant/switch/feeder_button/config",payload=None,qos=0,retain=True)
+      self.mqtt_client.publish("homeassistant/sensor/feeder_24hr_feeds/config",payload=None,qos=0,retain=True)
+      self.mqtt_client.publish("homeassistant/sensor/feeder_168hr_feeds/config",payload=None,qos=0,retain=True)
 
   def send_mqtt_update(self):
     """Summary
@@ -160,6 +178,8 @@ class Feeder():
 
     self.mqtt_client.publish("homeassistant/switch/feeder/state",payload=self.switch_state,qos=0,retain=True)
     self.mqtt_client.publish("homeassistant/switch/feeder_button/state",payload=self.button_state,qos=0,retain=True)
+    self.mqtt_client.publish("homeassistant/sensor/feeder_24hr_feeds/state",payload=self.num_recent_feeds(24),qos=0,retain=True)
+    self.mqtt_client.publish("homeassistant/sensor/feeder_168hr_feeds/state",payload=self.num_recent_feeds(168),qos=0,retain=True)
 
   def send_refresh(self):
     """Re-sends all pertinent info to MQTT server
