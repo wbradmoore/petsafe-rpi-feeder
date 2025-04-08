@@ -199,8 +199,7 @@ class Feeder():
   def callback_on_disconnect(self,mqtt_client, userdata,rc=0):
     """Disconnect Callback
     """
-    logging.warn("DisConnected result code "+str(rc))
-    mqtt_client.loop_stop()
+    logging.warning("Disconnected (rc=%s). The client will try auto-reconnect.", str(rc))
 
   def callback_on_message(self,mqtt_client, userdata, msg):
     """Message Callback. Handles requests for updates, and manual feed requests
