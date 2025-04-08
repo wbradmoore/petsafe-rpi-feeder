@@ -195,6 +195,7 @@ class Feeder():
     logging.info("Connected with result code "+str(rc))
     mqtt_client.subscribe("homeassistant/switch/feeder/set")
     mqtt_client.subscribe("homeassistant/switch/feeder_button/set")
+    self.send_refresh()
 
   def callback_on_disconnect(self,mqtt_client, userdata,rc=0):
     """Disconnect Callback
