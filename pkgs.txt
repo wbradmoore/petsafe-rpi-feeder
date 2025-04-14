@@ -1,0 +1,2 @@
+# this should be everything needed for debian 12 based raspberry pi os
+sudo apt-get install python3-paho-mqtt python3-apscheduler
